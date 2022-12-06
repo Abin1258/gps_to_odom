@@ -9,9 +9,13 @@
 #include <geographic_msgs/GeoPointStamped.h>
 #include <geodesy/utm.h>
 #include <nav_msgs/Odometry.h>
+#include <deque>
+
 
 #include <Eigen/Dense>
 #include <cmath>
+
+using namespace std;
 
 struct Piont
 {
@@ -29,8 +33,16 @@ private:
     ros::Subscriber navsatsub;
     ros::Publisher odompub;
     nav_msgs::Odometry odom;
+    nav_msgs::Odometry odomlast;
+    nav_msgs::Odometry odomcurr;
     Piont point;
     boost::optional<Eigen::Vector3d> zero_utm;
+    
+    std::vector<nav_msgs::Odometry> gpsvector;
+    std::deque<nav_msgs::Odometry> gpsdeque;
+    geometry_msgs::PoseStamped gpscov; 
+    ros::Publisher gpscovpub;
+    //ros::WallTimer gps_juge_timer;
     
 public:
     //! Constructor.
@@ -40,13 +52,14 @@ public:
 
     void NavsatCallback(const sensor_msgs::NavSatFixConstPtr& navsat_msg);
     void GpsCallback(const geographic_msgs::GeoPointStampedPtr& gps_msg);
+    //void gps_juge_callback(const ros::WallTimerEvent& event);
 };
 
 GpsOdom::GpsOdom(ros::NodeHandle& nh):nhg(nh) {
   //参数初始化
   navsatsub = nhg.subscribe("/gps/fix", 32, &GpsOdom::NavsatCallback, this); //gps/fix
   odompub = nhg.advertise<nav_msgs::Odometry>("gps_odom", 32);
-  
+  gpscovpub = nhg.advertise<geometry_msgs::PoseStamped>("gps_cov", 32);
   odom.header.frame_id = "odom";
   odom.child_frame_id = "base_link";
   
@@ -55,6 +68,7 @@ GpsOdom::GpsOdom(ros::NodeHandle& nh):nhg(nh) {
   point.orien = Eigen::Matrix3d::Identity();
   point.v = zero;
   point.w = zero;
+  //gps_juge_timer = nh.createWallTimer(ros::WallDuration(1), &GpsOdom::gps_juge_callback, this);
 }
 
 void GpsOdom::NavsatCallback(const sensor_msgs::NavSatFixConstPtr& navsat_msg) {
@@ -98,8 +112,33 @@ void GpsOdom::GpsCallback(const geographic_msgs::GeoPointStampedPtr& gps_msg) {
     odom.pose.pose.position.y = xyz(1);
     odom.pose.pose.position.z = xyz(2);
 
+    //离散程度判断画图
+    gpsdeque.push_back(odom);
+
+    if(gpsdeque.size() >= 2){
+    
+      odomlast = gpsdeque.front();
+      odomcurr = gpsdeque.back();
+
+      gpscov.header.seq = gps_msg->header.seq;
+      gpscov.header.stamp = gps_msg->header.stamp;
+      gpscov.pose.position.x = odomcurr.pose.pose.position.x - odomlast.pose.pose.position.x;
+      gpscov.pose.position.y = odomcurr.pose.pose.position.y - odomlast.pose.pose.position.y;
+      gpscov.pose.position.z = odomcurr.pose.pose.position.z - odomlast.pose.pose.position.z;
+      //odom.pose.covariance(1,1) = odomcurr.pose.pose.position.x - odomlast.pose.pose.position.x;
+      gpsdeque.pop_front();
+    }
+
     odompub.publish(odom);
+    gpscovpub.publish(gpscov);
 }
+
+// void GpsOdom::gps_juge_callback(const ros::WallTimerEvent& event) {
+//    //离散程度判断画图
+//     gpsQueue.push_back(odom);
+
+
+// }
 
 
 #endif
