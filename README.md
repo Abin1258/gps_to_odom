@@ -3,4 +3,6 @@ gps/RTK odometry
 
 rosrun gps_to_odom gps_to_odom
 
-pip install geodesy
+
+sudo apt-get install ros-noetic-geodesy
+ sudo apt-get install ros-noetic-geographic-msgs
