@@ -11,6 +11,11 @@
 #include <nav_msgs/Odometry.h>
 #include <deque>
 
+#include <nav_msgs/Path.h>
+#include <geometry_msgs/TransformStamped.h>
+#include <tf2_msgs/TFMessage.h>
+
+
 
 #include <Eigen/Dense>
 #include <cmath>
@@ -43,6 +48,9 @@ private:
     geometry_msgs::PoseStamped gpscov; 
     ros::Publisher gpscovpub;
     //ros::WallTimer gps_juge_timer;
+
+    ros::Subscriber pathsub;
+    ros::Publisher TransformStampedpub;
     
 public:
     //! Constructor.
@@ -52,11 +60,16 @@ public:
 
     void NavsatCallback(const sensor_msgs::NavSatFixConstPtr& navsat_msg);
     void GpsCallback(const geographic_msgs::GeoPointStampedPtr& gps_msg);
+    void PathCallback(const nav_msgs::Path::ConstPtr& path_msg);
     //void gps_juge_callback(const ros::WallTimerEvent& event);
 };
 
 GpsOdom::GpsOdom(ros::NodeHandle& nh):nhg(nh) {
   //参数初始化
+
+  pathsub = nhg.subscribe("/trajectory_viz/trajectory", 32, &GpsOdom::PathCallback, this);
+  TransformStampedpub = nh.advertise<tf2_msgs::TFMessage>("/tfs", 50);
+
   navsatsub = nhg.subscribe("/gps/fix", 32, &GpsOdom::NavsatCallback, this); //gps/fix
   odompub = nhg.advertise<nav_msgs::Odometry>("gps_odom", 32);
   gpscovpub = nhg.advertise<geometry_msgs::PoseStamped>("gps_cov", 32);
@@ -69,6 +82,23 @@ GpsOdom::GpsOdom(ros::NodeHandle& nh):nhg(nh) {
   point.v = zero;
   point.w = zero;
   //gps_juge_timer = nh.createWallTimer(ros::WallDuration(1), &GpsOdom::gps_juge_callback, this);
+}
+
+void GpsOdom::PathCallback(const nav_msgs::Path::ConstPtr& path_msg) {
+    for (int i = 0; i < path_msg->poses.size(); i++)
+  {
+    geometry_msgs::TransformStamped transform_stamped;
+    transform_stamped.header = path_msg->header;
+    transform_stamped.child_frame_id = "child_frame"; // 设置子坐标系
+    transform_stamped.transform.translation.x = path_msg->poses[i].pose.position.x;
+    transform_stamped.transform.translation.y = path_msg->poses[i].pose.position.y;
+    transform_stamped.transform.translation.z = path_msg->poses[i].pose.position.z;
+    transform_stamped.transform.rotation = path_msg->poses[i].pose.orientation;
+    // Do something with the transform_stamped message here
+    tf2_msgs::TFMessage tf_msg;
+    tf_msg.transforms.push_back(transform_stamped);
+    TransformStampedpub.publish(tf_msg);
+  }
 }
 
 void GpsOdom::NavsatCallback(const sensor_msgs::NavSatFixConstPtr& navsat_msg) {
